@@ -1,6 +1,6 @@
-import {Direction, Directionality} from '@angular/cdk/bidi';
+import {Directionality} from '@angular/cdk/bidi';
 import {DOWN_ARROW, ENTER, ESCAPE, SPACE, UP_ARROW, TAB} from '@angular/cdk/keycodes';
-import {OverlayContainer} from '@angular/cdk/overlay';
+import {OverlayContainer, Overlay} from '@angular/cdk/overlay';
 import {map} from 'rxjs/operators/map';
 import {startWith} from 'rxjs/operators/startWith';
 import {ScrollDispatcher} from '@angular/cdk/scrolling';
@@ -20,6 +20,7 @@ import {
   ViewChild,
   ViewChildren,
   NgZone,
+  Provider,
 } from '@angular/core';
 import {
   async,
@@ -31,7 +32,7 @@ import {
   flush,
 } from '@angular/core/testing';
 import {FormControl, FormsModule, ReactiveFormsModule} from '@angular/forms';
-import {MatOption} from '@angular/material/core';
+import {MatOption, MatOptionSelectionChange} from '@angular/material/core';
 import {MatFormField, MatFormFieldModule} from '@angular/material/form-field';
 import {By} from '@angular/platform-browser';
 import {NoopAnimationsModule} from '@angular/platform-browser/animations';
@@ -45,6 +46,8 @@ import {
   MatAutocompleteModule,
   MatAutocompleteSelectedEvent,
   MatAutocompleteTrigger,
+  MAT_AUTOCOMPLETE_SCROLL_STRATEGY,
+  MAT_AUTOCOMPLETE_DEFAULT_OPTIONS,
 } from './index';
 
 
@@ -55,7 +58,7 @@ describe('MatAutocomplete', () => {
   let zone: MockNgZone;
 
   // Creates a test component fixture.
-  function createComponent(component: any, dir: Direction = 'ltr'): ComponentFixture<any> {
+  function createComponent(component: any, providers: Provider[] = []): ComponentFixture<any> {
     TestBed.configureTestingModule({
       imports: [
         MatAutocompleteModule,
@@ -67,14 +70,14 @@ describe('MatAutocomplete', () => {
       ],
       declarations: [component],
       providers: [
-        {provide: Directionality, useFactory: () => ({value: dir})},
         {provide: ScrollDispatcher, useFactory: () => ({
           scrolled: () => scrolledSubject.asObservable()
         })},
         {provide: NgZone, useFactory: () => {
           zone = new MockNgZone();
           return zone;
-        }}
+        }},
+        ...providers
       ]
     });
 
@@ -88,11 +91,12 @@ describe('MatAutocomplete', () => {
     return TestBed.createComponent(component);
   }
 
-  afterEach(() => {
-    if (overlayContainer) {
-      overlayContainer.ngOnDestroy();
-    }
-  });
+  afterEach(inject([OverlayContainer], (currentOverlayContainer: OverlayContainer) => {
+    // Since we're resetting the testing module in some of the tests,
+    // we can potentially have multiple overlay containers.
+    currentOverlayContainer.ngOnDestroy();
+    overlayContainer.ngOnDestroy();
+  }));
 
   describe('panel toggling', () => {
     let fixture: ComponentFixture<SimpleAutocomplete>;
@@ -126,6 +130,19 @@ describe('MatAutocomplete', () => {
 
       expect(trigger.panelOpen).toBe(false, 'Expected panel state to start out closed.');
       dispatchFakeEvent(input, 'focusin');
+      flush();
+
+      fixture.detectChanges();
+      expect(trigger.panelOpen).toBe(false, 'Expected panel to stay closed.');
+    }));
+
+    it('should not open using the arrow keys when the input is readonly', fakeAsync(() => {
+      const trigger = fixture.componentInstance.trigger;
+      input.readOnly = true;
+      fixture.detectChanges();
+
+      expect(trigger.panelOpen).toBe(false, 'Expected panel state to start out closed.');
+      dispatchKeyboardEvent(input, 'keydown', DOWN_ARROW);
       flush();
 
       fixture.detectChanges();
@@ -395,9 +412,11 @@ describe('MatAutocomplete', () => {
   });
 
   it('should have the correct text direction in RTL', () => {
-    const rtlFixture = createComponent(SimpleAutocomplete, 'rtl');
-    rtlFixture.detectChanges();
+    const rtlFixture = createComponent(SimpleAutocomplete, [
+      {provide: Directionality, useFactory: () => ({value: 'rtl'})},
+    ]);
 
+    rtlFixture.detectChanges();
     rtlFixture.componentInstance.trigger.openPanel();
     rtlFixture.detectChanges();
 
@@ -594,6 +613,23 @@ describe('MatAutocomplete', () => {
 
       expect(fixture.componentInstance.stateCtrl.touched)
           .toBe(true, `Expected control to become touched on blur.`);
+    });
+
+    it('should disable the input when used with a value accessor and without `matInput`', () => {
+      overlayContainer.ngOnDestroy();
+      fixture.destroy();
+      TestBed.resetTestingModule();
+
+      const plainFixture = createComponent(PlainAutocompleteInputWithFormControl);
+      plainFixture.detectChanges();
+      input = plainFixture.nativeElement.querySelector('input');
+
+      expect(input.disabled).toBe(false);
+
+      plainFixture.componentInstance.formControl.disable();
+      plainFixture.detectChanges();
+
+      expect(input.disabled).toBe(true);
     });
 
   });
@@ -881,6 +917,25 @@ describe('MatAutocomplete', () => {
       expect(document.activeElement).toBe(input, 'Expected input to continue to be focused.');
       expect(trigger.panelOpen).toBe(false, 'Expected panel to be closed.');
       expect(stopPropagationSpy).toHaveBeenCalled();
+    }));
+
+    it('should close the panel when pressing ALT + UP_ARROW', fakeAsync(() => {
+      const trigger = fixture.componentInstance.trigger;
+      const upArrowEvent = createKeyboardEvent('keydown', UP_ARROW);
+      Object.defineProperty(upArrowEvent, 'altKey', {get: () => true});
+
+      input.focus();
+      flush();
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(input, 'Expected input to be focused.');
+      expect(trigger.panelOpen).toBe(true, 'Expected panel to be open.');
+
+      trigger._handleKeydown(upArrowEvent);
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(input, 'Expected input to continue to be focused.');
+      expect(trigger.panelOpen).toBe(false, 'Expected panel to be closed.');
     }));
 
     it('should close the panel when tabbing away from a trigger without results', fakeAsync(() => {
@@ -1240,12 +1295,12 @@ describe('MatAutocomplete', () => {
     beforeEach(() => {
       fixture = createComponent(SimpleAutocomplete);
       fixture.detectChanges();
-
-      fixture.componentInstance.trigger.openPanel();
-      fixture.detectChanges();
     });
 
     it('should deselect any other selected option', fakeAsync(() => {
+      fixture.componentInstance.trigger.openPanel();
+      fixture.detectChanges();
+
       let options =
           overlayContainerElement.querySelectorAll('mat-option') as NodeListOf<HTMLElement>;
       options[0].click();
@@ -1269,6 +1324,9 @@ describe('MatAutocomplete', () => {
     }));
 
     it('should call deselect only on the previous selected option', fakeAsync(() => {
+      fixture.componentInstance.trigger.openPanel();
+      fixture.detectChanges();
+
       let options =
           overlayContainerElement.querySelectorAll('mat-option') as NodeListOf<HTMLElement>;
       options[0].click();
@@ -1290,6 +1348,63 @@ describe('MatAutocomplete', () => {
       expect(componentOptions[0].deselect).toHaveBeenCalled();
       componentOptions.slice(1).forEach(option => expect(option.deselect).not.toHaveBeenCalled());
     }));
+
+    it('should be able to preselect the first option', fakeAsync(() => {
+      fixture.componentInstance.trigger.autocomplete.autoActiveFirstOption = true;
+      fixture.componentInstance.trigger.openPanel();
+      fixture.detectChanges();
+      zone.simulateZoneExit();
+      fixture.detectChanges();
+
+      expect(overlayContainerElement.querySelectorAll('mat-option')[0].classList)
+          .toContain('mat-active', 'Expected first option to be highlighted.');
+    }));
+
+    it('should be able to configure preselecting the first option globally', fakeAsync(() => {
+      overlayContainer.ngOnDestroy();
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      fixture = createComponent(SimpleAutocomplete, [
+        {provide: MAT_AUTOCOMPLETE_DEFAULT_OPTIONS, useValue: {autoActiveFirstOption: true}}
+      ]);
+
+      fixture.detectChanges();
+      fixture.componentInstance.trigger.openPanel();
+      fixture.detectChanges();
+      zone.simulateZoneExit();
+      fixture.detectChanges();
+
+      expect(overlayContainerElement.querySelectorAll('mat-option')[0].classList)
+          .toContain('mat-active', 'Expected first option to be highlighted.');
+    }));
+
+    it('should handle `optionSelections` being accessed too early', fakeAsync(() => {
+      overlayContainer.ngOnDestroy();
+      fixture.destroy();
+      fixture = TestBed.createComponent(SimpleAutocomplete);
+
+      let spy = jasmine.createSpy('option selection spy');
+      let subscription: Subscription;
+
+      expect(fixture.componentInstance.trigger.autocomplete).toBeFalsy();
+      expect(() => {
+        subscription = fixture.componentInstance.trigger.optionSelections.subscribe(spy);
+      }).not.toThrow();
+
+      fixture.detectChanges();
+      fixture.componentInstance.trigger.openPanel();
+      fixture.detectChanges();
+      zone.simulateZoneExit();
+
+      const option = overlayContainerElement.querySelector('mat-option') as HTMLElement;
+
+      option.click();
+      fixture.detectChanges();
+      zone.simulateZoneExit();
+
+      expect(spy).toHaveBeenCalledWith(jasmine.any(MatOptionSelectionChange));
+    }));
+
   });
 
   describe('panel closing', () => {
@@ -1331,6 +1446,23 @@ describe('MatAutocomplete', () => {
       expect(closingActionSpy).not.toHaveBeenCalled();
       trigger._handleKeydown(tabEvent);
       expect(closingActionSpy).toHaveBeenCalled();
+    });
+
+    it('should not emit when tabbing away from a closed panel', () => {
+      const tabEvent = createKeyboardEvent('keydown', TAB);
+
+      input.focus();
+      zone.simulateZoneExit();
+
+      trigger._handleKeydown(tabEvent);
+
+      // Ensure that it emitted once while the panel was open.
+      expect(closingActionSpy).toHaveBeenCalledTimes(1);
+
+      trigger._handleKeydown(tabEvent);
+
+      // Ensure that it didn't emit again when tabbing out again.
+      expect(closingActionSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should emit panel close event when selecting an option', () => {
@@ -1485,6 +1617,27 @@ describe('MatAutocomplete', () => {
       expect(panel.classList).toContain('class-two');
     }));
 
+    it('should reset correctly when closed programmatically', fakeAsync(() => {
+      TestBed.overrideProvider(MAT_AUTOCOMPLETE_SCROLL_STRATEGY, {
+        useFactory: (overlay: Overlay) => () => overlay.scrollStrategies.close(),
+        deps: [Overlay]
+      });
+
+      const fixture = createComponent(SimpleAutocomplete);
+      fixture.detectChanges();
+      const trigger = fixture.componentInstance.trigger;
+
+      trigger.openPanel();
+      fixture.detectChanges();
+      zone.simulateZoneExit();
+
+      expect(trigger.panelOpen).toBe(true, 'Expected panel to be open.');
+
+      scrolledSubject.next();
+      fixture.detectChanges();
+
+      expect(trigger.panelOpen).toBe(false, 'Expected panel to be closed.');
+    }));
 
   });
 
@@ -1615,7 +1768,8 @@ describe('MatAutocomplete', () => {
       <input matInput placeholder="State" [matAutocomplete]="auto" [formControl]="stateCtrl">
     </mat-form-field>
 
-    <mat-autocomplete class="class-one class-two" #auto="matAutocomplete" [displayWith]="displayFn">
+    <mat-autocomplete class="class-one class-two" #auto="matAutocomplete" [displayWith]="displayFn"
+      [disableRipple]="disableRipple">
       <mat-option *ngFor="let state of filteredStates" [value]="state">
         <span> {{ state.code }}: {{ state.name }}  </span>
       </mat-option>
@@ -1628,6 +1782,7 @@ class SimpleAutocomplete implements OnDestroy {
   valueSub: Subscription;
   floatLabel = 'auto';
   width: number;
+  disableRipple = false;
 
   @ViewChild(MatAutocompleteTrigger) trigger: MatAutocompleteTrigger;
   @ViewChild(MatAutocomplete) panel: MatAutocomplete;
@@ -1905,4 +2060,15 @@ class AutocompleteWithSelectEvent {
 
   @ViewChild(MatAutocompleteTrigger) trigger: MatAutocompleteTrigger;
   @ViewChild(MatAutocomplete) autocomplete: MatAutocomplete;
+}
+
+
+@Component({
+  template: `
+    <input [formControl]="formControl" [matAutocomplete]="auto"/>
+    <mat-autocomplete #auto="matAutocomplete"></mat-autocomplete>
+  `
+})
+class PlainAutocompleteInputWithFormControl {
+  formControl = new FormControl();
 }

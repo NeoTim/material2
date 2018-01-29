@@ -257,6 +257,24 @@ export class ConnectedPositionStrategy implements PositionStrategy {
   }
 
   /**
+   * Overwrites the current set of positions with an array of new ones.
+   * @param positions Position pairs to be set on the strategy.
+   */
+  withPositions(positions: ConnectionPositionPair[]): this {
+    this._preferredPositions = positions.slice();
+    return this;
+  }
+
+  /**
+   * Sets the origin element, relative to which to position the overlay.
+   * @param origin Reference to the new origin element.
+   */
+  setOrigin(origin: ElementRef): this {
+    this._origin = origin.nativeElement;
+    return this;
+  }
+
+  /**
    * Gets the horizontal (x) "start" dimension based on whether the overlay is in an RTL context.
    * @param rect
    */

@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {coerceNumberProperty} from '@angular/cdk/coercion';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -64,7 +65,7 @@ export class MatPaginator implements OnInit, OnDestroy {
   @Input()
   get pageIndex(): number { return this._pageIndex; }
   set pageIndex(pageIndex: number) {
-    this._pageIndex = pageIndex;
+    this._pageIndex = coerceNumberProperty(pageIndex);
     this._changeDetectorRef.markForCheck();
   }
   _pageIndex: number = 0;
@@ -73,7 +74,7 @@ export class MatPaginator implements OnInit, OnDestroy {
   @Input()
   get length(): number { return this._length; }
   set length(length: number) {
-    this._length = length;
+    this._length = coerceNumberProperty(length);
     this._changeDetectorRef.markForCheck();
   }
   _length: number = 0;
@@ -82,7 +83,7 @@ export class MatPaginator implements OnInit, OnDestroy {
   @Input()
   get pageSize(): number { return this._pageSize; }
   set pageSize(pageSize: number) {
-    this._pageSize = pageSize;
+    this._pageSize = coerceNumberProperty(pageSize);
     this._updateDisplayedPageSizeOptions();
   }
   private _pageSize: number;
@@ -91,13 +92,16 @@ export class MatPaginator implements OnInit, OnDestroy {
   @Input()
   get pageSizeOptions(): number[] { return this._pageSizeOptions; }
   set pageSizeOptions(pageSizeOptions: number[]) {
-    this._pageSizeOptions = pageSizeOptions;
+    this._pageSizeOptions = (pageSizeOptions || []).map(p => coerceNumberProperty(p));
     this._updateDisplayedPageSizeOptions();
   }
   private _pageSizeOptions: number[] = [];
 
+  /** Whether to hide the page size selection UI from the user. */
+  @Input() hidePageSize = false;
+
   /** Event emitted when the paginator changes the page size or page index. */
-  @Output() page = new EventEmitter<PageEvent>();
+  @Output() readonly page = new EventEmitter<PageEvent>();
 
   /** Displayed set of page size options. Will be sorted and include current page size. */
   _displayedPageSizeOptions: number[];
@@ -117,26 +121,26 @@ export class MatPaginator implements OnInit, OnDestroy {
   }
 
   /** Advances to the next page if it exists. */
-  nextPage() {
+  nextPage(): void {
     if (!this.hasNextPage()) { return; }
     this.pageIndex++;
     this._emitPageEvent();
   }
 
   /** Move back to the previous page if it exists. */
-  previousPage() {
+  previousPage(): void {
     if (!this.hasPreviousPage()) { return; }
     this.pageIndex--;
     this._emitPageEvent();
   }
 
   /** Whether there is a previous page. */
-  hasPreviousPage() {
+  hasPreviousPage(): boolean {
     return this.pageIndex >= 1 && this.pageSize != 0;
   }
 
   /** Whether there is a next page. */
-  hasNextPage() {
+  hasNextPage(): boolean {
     const numberOfPages = Math.ceil(this.length / this.pageSize) - 1;
     return this.pageIndex < numberOfPages && this.pageSize != 0;
   }
@@ -186,7 +190,7 @@ export class MatPaginator implements OnInit, OnDestroy {
 
   /** Emits an event notifying that a change of the paginator's properties has been triggered. */
   private _emitPageEvent() {
-    this.page.next({
+    this.page.emit({
       pageIndex: this.pageIndex,
       pageSize: this.pageSize,
       length: this.length

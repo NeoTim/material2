@@ -28,7 +28,8 @@ import {
   MatTooltipModule,
   SCROLL_THROTTLE_MS,
   TOOLTIP_PANEL_CLASS,
-  TooltipPosition
+  TooltipPosition,
+  MAT_TOOLTIP_DEFAULT_OPTIONS,
 } from './index';
 
 
@@ -69,9 +70,12 @@ describe('MatTooltip', () => {
     })();
   }));
 
-  afterEach(() => {
+  afterEach(inject([OverlayContainer], (currentOverlayContainer: OverlayContainer) => {
+    // Since we're resetting the testing module in some of the tests,
+    // we can potentially have multiple overlay containers.
+    currentOverlayContainer.ngOnDestroy();
     overlayContainer.ngOnDestroy();
-  });
+  }));
 
   describe('basic usage', () => {
     let fixture: ComponentFixture<BasicTooltipDemo>;
@@ -154,6 +158,40 @@ describe('MatTooltip', () => {
       tick(tooltipDelay);
       expect(tooltipDirective._isTooltipVisible()).toBe(true);
       expect(overlayContainerElement.textContent).toContain(initialTooltipMessage);
+    }));
+
+    it('should be able to override the default show and hide delays', fakeAsync(() => {
+      TestBed
+        .resetTestingModule()
+        .configureTestingModule({
+          imports: [MatTooltipModule, OverlayModule, NoopAnimationsModule],
+          declarations: [BasicTooltipDemo],
+          providers: [{
+            provide: MAT_TOOLTIP_DEFAULT_OPTIONS,
+            useValue: {showDelay: 1337, hideDelay: 7331}
+          }]
+        })
+        .compileComponents();
+
+      fixture = TestBed.createComponent(BasicTooltipDemo);
+      fixture.detectChanges();
+      tooltipDirective = fixture.debugElement.query(By.css('button')).injector.get(MatTooltip);
+
+      tooltipDirective.show();
+      fixture.detectChanges();
+      tick();
+
+      expect(tooltipDirective._isTooltipVisible()).toBe(false);
+      tick(1337);
+      expect(tooltipDirective._isTooltipVisible()).toBe(true);
+
+      tooltipDirective.hide();
+      fixture.detectChanges();
+      tick();
+
+      expect(tooltipDirective._isTooltipVisible()).toBe(true);
+      tick(7331);
+      expect(tooltipDirective._isTooltipVisible()).toBe(false);
     }));
 
     it('should set a css class on the overlay panel element', fakeAsync(() => {

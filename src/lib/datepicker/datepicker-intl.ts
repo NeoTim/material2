@@ -17,7 +17,7 @@ export class MatDatepickerIntl {
    * Stream that emits whenever the labels here are changed. Use this to notify
    * components if the labels have changed after initialization.
    */
-  changes: Subject<void> = new Subject<void>();
+  readonly changes: Subject<void> = new Subject<void>();
 
   /** A label for the calendar popup (used by screen readers). */
   calendarLabel = 'Calendar';
@@ -37,9 +37,15 @@ export class MatDatepickerIntl {
   /** A label for the next year button (used by screen readers). */
   nextYearLabel = 'Next year';
 
+  /** A label for the previous multi-year button (used by screen readers). */
+  prevMultiYearLabel = 'Previous 20 years';
+
+  /** A label for the next multi-year button (used by screen readers). */
+  nextMultiYearLabel = 'Next 20 years';
+
   /** A label for the 'switch to month view' button (used by screen readers). */
-  switchToMonthViewLabel = 'Change to month view';
+  switchToMonthViewLabel = 'Choose date';
 
   /** A label for the 'switch to year view' button (used by screen readers). */
-  switchToYearViewLabel = 'Change to year view';
+  switchToMultiYearViewLabel = 'Choose month and year';
 }

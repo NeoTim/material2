@@ -34,7 +34,7 @@ const DAYS_PER_WEEK = 7;
   moduleId: module.id,
   selector: 'mat-month-view',
   templateUrl: 'month-view.html',
-  exportAs: 'matMonthVeiw',
+  exportAs: 'matMonthView',
   encapsulation: ViewEncapsulation.None,
   preserveWhitespaces: false,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -68,10 +68,10 @@ export class MatMonthView<D> implements AfterContentInit {
   @Input() dateFilter: (date: D) => boolean;
 
   /** Emits when a new date is selected. */
-  @Output() selectedChange = new EventEmitter<D | null>();
+  @Output() readonly selectedChange = new EventEmitter<D | null>();
 
   /** Emits when any date is selected. */
-  @Output() _userSelection = new EventEmitter<void>();
+  @Output() readonly _userSelection = new EventEmitter<void>();
 
   /** The label for this month (e.g. "January 2017"). */
   _monthLabel: string;

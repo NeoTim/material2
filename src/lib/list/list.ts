@@ -30,18 +30,6 @@ export const _MatListMixinBase = mixinDisableRipple(MatListBase);
 export class MatListItemBase {}
 export const _MatListItemMixinBase = mixinDisableRipple(MatListItemBase);
 
-
-/** Divider between items within a list. */
-@Directive({
-  selector: 'mat-divider',
-  host: {
-    'role': 'separator',
-    'aria-orientation': 'horizontal'
-  }
-})
-export class MatListDivider {}
-
-/** A Material Design list component. */
 @Component({
   moduleId: module.id,
   selector: 'mat-nav-list',
@@ -72,16 +60,6 @@ export class MatNavList extends _MatListMixinBase implements CanDisableRipple {}
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MatList extends _MatListMixinBase implements CanDisableRipple {}
-
-/**
- * Directive whose purpose is to add the mat- CSS styling to this selector.
- * @docs-private
- */
-@Directive({
-  selector: 'mat-divider',
-  host: {'class': 'mat-divider'}
-})
-export class MatDividerCssMatStyler {}
 
 /**
  * Directive whose purpose is to add the mat- CSS styling to this selector.
@@ -155,7 +133,7 @@ export class MatListItem extends _MatListItemMixinBase implements AfterContentIn
     this._lineSetter = new MatLineSetter(this._lines, this._element);
   }
 
-  /** Whether this list item should show a ripple effect when clicked.  */
+  /** Whether this list item should show a ripple effect when clicked. */
   _isRippleDisabled() {
     return !this._isNavList || this.disableRipple || this._navList.disableRipple;
   }

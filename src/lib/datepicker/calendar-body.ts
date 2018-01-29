@@ -39,6 +39,8 @@ export class MatCalendarCell {
   styleUrls: ['calendar-body.css'],
   host: {
     'class': 'mat-calendar-body',
+    'role': 'grid',
+    'attr.aria-readonly': 'true'
   },
   exportAs: 'matCalendarBody',
   encapsulation: ViewEncapsulation.None,
@@ -77,7 +79,7 @@ export class MatCalendarBody {
   @Input() cellAspectRatio = 1;
 
   /** Emits when a new value is selected. */
-  @Output() selectedValueChange = new EventEmitter<number>();
+  @Output() readonly selectedValueChange = new EventEmitter<number>();
 
   _cellClicked(cell: MatCalendarCell): void {
     if (!this.allowDisabledSelection && !cell.enabled) {

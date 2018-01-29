@@ -413,6 +413,18 @@ describe('MatInput without forms', () => {
     expect(el.nativeElement.textContent).toMatch(/hello\s+\*/g);
   }));
 
+  it('should hide the required star if input is disabled', () => {
+    const fixture = TestBed.createComponent(MatInputPlaceholderRequiredTestComponent);
+
+    fixture.componentInstance.disabled = true;
+    fixture.detectChanges();
+
+    const el = fixture.debugElement.query(By.css('label'));
+
+    expect(el).not.toBeNull();
+    expect(el.nativeElement.textContent).toMatch(/^hello$/);
+  });
+
   it('should hide the required star from screen readers', fakeAsync(() => {
     let fixture = TestBed.createComponent(MatInputPlaceholderRequiredTestComponent);
     fixture.detectChanges();
@@ -1118,6 +1130,21 @@ describe('MatInput with forms', () => {
     expect(el).not.toBeNull();
     expect(el.classList.contains('mat-form-field-empty')).toBe(false);
   }));
+
+  it('should update when the form field value is patched without emitting', fakeAsync(() => {
+    const fixture = TestBed.createComponent(MatInputWithFormControl);
+    fixture.detectChanges();
+
+    const el = fixture.debugElement.query(By.css('label')).nativeElement;
+
+    expect(el.classList).toContain('mat-form-field-empty');
+
+    fixture.componentInstance.formControl.patchValue('value', {emitEvent: false});
+    fixture.detectChanges();
+
+    expect(el.classList).not.toContain('mat-form-field-empty');
+  }));
+
 });
 
 @Component({
@@ -1151,11 +1178,12 @@ class MatInputWithType {
 
 @Component({
   template: `<mat-form-field [hideRequiredMarker]="hideRequiredMarker">
-                <input matInput required placeholder="hello">
+                <input matInput required [disabled]="disabled" placeholder="hello">
              </mat-form-field>`
 })
 class MatInputPlaceholderRequiredTestComponent {
-  hideRequiredMarker: boolean;
+  hideRequiredMarker: boolean = false;
+  disabled: boolean = false;
 }
 
 @Component({
@@ -1170,7 +1198,10 @@ class MatInputPlaceholderElementTestComponent {
 }
 
 @Component({
-  template: `<mat-form-field><input matInput [formControl]="formControl"></mat-form-field>`
+  template: `
+    <mat-form-field>
+      <input matInput placeholder="Hello" [formControl]="formControl">
+    </mat-form-field>`
 })
 class MatInputWithFormControl {
   formControl = new FormControl();

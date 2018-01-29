@@ -10,7 +10,7 @@ import {FocusKeyManager} from '@angular/cdk/a11y';
 import {Directionality} from '@angular/cdk/bidi';
 import {coerceBooleanProperty} from '@angular/cdk/coercion';
 import {SelectionModel} from '@angular/cdk/collections';
-import {BACKSPACE, LEFT_ARROW, RIGHT_ARROW} from '@angular/cdk/keycodes';
+import {BACKSPACE} from '@angular/cdk/keycodes';
 import {startWith} from 'rxjs/operators/startWith';
 import {
   AfterContentInit,
@@ -136,9 +136,6 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
   /** The chip input to add more chips */
   protected _chipInput: MatChipInput;
 
-  /** The aria-describedby attribute on the chip list for improved a11y. */
-  protected _ariaDescribedby: string;
-
   /** Id of the chip list */
   protected _id: string;
 
@@ -155,6 +152,9 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
 
   /** Placeholder for the chip list. Alternatively, placeholder can be set on MatChipInput */
   protected _placeholder: string;
+
+  /** The aria-describedby attribute on the chip list for improved a11y. */
+  _ariaDescribedby: string;
 
   /** Tab index for the chip list. */
   _tabIndex = 0;
@@ -223,30 +223,28 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
 
   /** Required for FormFieldControl. The ID of the chip list */
   @Input()
+  get id(): string { return this._id || this._uid; }
   set id(value: string) {
     this._id = value;
     this.stateChanges.next();
   }
-  get id() { return this._id || this._uid; }
 
   /** Required for FormFieldControl. Whether the chip list is required. */
   @Input()
-  set required(value: any) {
+  get required(): boolean { return this._required; }
+  set required(value: boolean) {
     this._required = coerceBooleanProperty(value);
     this.stateChanges.next();
-  }
-  get required() {
-    return this._required;
   }
 
   /** For FormFieldControl. Use chip input's placholder if there's a chip input */
   @Input()
+  get placeholder(): string {
+    return this._chipInput ? this._chipInput.placeholder : this._placeholder;
+  }
   set placeholder(value: string) {
     this._placeholder = value;
     this.stateChanges.next();
-  }
-  get placeholder() {
-    return this._chipInput ? this._chipInput.placeholder : this._placeholder;
   }
 
   /** Whether any chips or the matChipInput inside of this chip-list has focus. */
@@ -260,9 +258,8 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
     return (!this._chipInput || this._chipInput.empty) && this.chips.length === 0;
   }
 
-  get shouldLabelFloat(): boolean {
-    return !this.empty || this.focused;
-  }
+  /** @docs-private */
+  get shouldLabelFloat(): boolean { return !this.empty || this.focused; }
 
   /** Whether this chip-list is disabled. */
   @Input()
@@ -308,14 +305,15 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
   }
 
   /** Event emitted when the selected chip list value has been changed by the user. */
-  @Output() change: EventEmitter<MatChipListChange> = new EventEmitter<MatChipListChange>();
+  @Output() readonly change: EventEmitter<MatChipListChange> =
+      new EventEmitter<MatChipListChange>();
 
   /**
    * Event that emits whenever the raw value of the chip-list changes. This is here primarily
    * to facilitate the two-way binding for the `value` input.
    * @docs-private
    */
-  @Output() valueChange = new EventEmitter<any>();
+  @Output() readonly valueChange: EventEmitter<any> = new EventEmitter<any>();
 
   /** The chip components contained within this chip list. */
   @ContentChildren(MatChip) chips: QueryList<MatChip>;
@@ -334,8 +332,10 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
   }
 
   ngAfterContentInit(): void {
-
-    this._keyManager = new FocusKeyManager<MatChip>(this.chips).withWrap();
+    this._keyManager = new FocusKeyManager<MatChip>(this.chips)
+      .withWrap()
+      .withVerticalOrientation()
+      .withHorizontalOrientation(this._dir ? this._dir.value : 'ltr');
 
     // Prevents the chip list from capturing focus and redirecting
     // it back to the first chip when the user tabs out.
@@ -389,7 +389,10 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
     this._chipInput = inputElement;
   }
 
-  // Implemented as part of MatFormFieldControl.
+  /**
+   * Implemented as part of MatFormFieldControl.
+   * @docs-private
+   */
   setDescribedByIds(ids: string[]) { this._ariaDescribedby = ids.join(' '); }
 
   // Implemented as part of ControlValueAccessor
@@ -416,6 +419,7 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
     this.stateChanges.next();
   }
 
+  /** @docs-private */
   onContainerClick() {
     this.focus();
   }
@@ -424,7 +428,7 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
    * Focuses the the first non-disabled chip in this chip list, or the associated input when there
    * are no eligible chips.
    */
-  focus() {
+  focus(): void {
     // TODO: ARIA says this should focus the first `selected` chip if any are selected.
     // Focus on first element if there's no chipInput inside chip-list
     if (this._chipInput && this._chipInput.focused) {
@@ -449,35 +453,16 @@ export class MatChipList extends _MatChipListMixinBase implements MatFormFieldCo
    * Pass events to the keyboard manager. Available here for tests.
    */
   _keydown(event: KeyboardEvent) {
-    let code = event.keyCode;
-    let target = event.target as HTMLElement;
-    let isInputEmpty = this._isInputEmpty(target);
-    let isRtl = this._dir && this._dir.value == 'rtl';
+    const target = event.target as HTMLElement;
 
-    let isPrevKey = (code === (isRtl ? RIGHT_ARROW : LEFT_ARROW));
-    let isNextKey = (code === (isRtl ? LEFT_ARROW : RIGHT_ARROW));
-    let isBackKey = code === BACKSPACE;
     // If they are on an empty input and hit backspace, focus the last chip
-    if (isInputEmpty && isBackKey) {
+    if (event.keyCode === BACKSPACE && this._isInputEmpty(target)) {
       this._keyManager.setLastItemActive();
       event.preventDefault();
-      return;
+    } else {
+      this._keyManager.onKeydown(event);
+      this.stateChanges.next();
     }
-
-    // If they are on a chip, check for space/left/right, otherwise pass to our key manager (like
-    // up/down keys)
-    if (target && target.classList.contains('mat-chip')) {
-      if (isPrevKey) {
-        this._keyManager.setPreviousItemActive();
-        event.preventDefault();
-      } else if (isNextKey) {
-        this._keyManager.setNextItemActive();
-        event.preventDefault();
-      } else {
-        this._keyManager.onKeydown(event);
-      }
-    }
-    this.stateChanges.next();
   }
 
 

@@ -7,13 +7,14 @@ import {
   EventEmitter,
   Input,
   Output,
+  NgZone,
   TemplateRef,
   ViewChild,
   ViewChildren,
   QueryList,
 } from '@angular/core';
 import {Direction, Directionality} from '@angular/cdk/bidi';
-import {OverlayContainer} from '@angular/cdk/overlay';
+import {OverlayContainer, Overlay} from '@angular/cdk/overlay';
 import {ESCAPE, LEFT_ARROW, RIGHT_ARROW} from '@angular/cdk/keycodes';
 import {
   MAT_MENU_DEFAULT_OPTIONS,
@@ -25,7 +26,7 @@ import {
   MenuPositionY,
   MatMenuItem,
 } from './index';
-import {MENU_PANEL_TOP_PADDING} from './menu-trigger';
+import {MENU_PANEL_TOP_PADDING, MAT_MENU_SCROLL_STRATEGY} from './menu-trigger';
 import {MatRipple} from '@angular/material/core';
 import {
   dispatchKeyboardEvent,
@@ -34,7 +35,12 @@ import {
   createKeyboardEvent,
   createMouseEvent,
   dispatchFakeEvent,
+  patchElementFocus,
+  MockNgZone,
 } from '@angular/cdk/testing';
+import {Subject} from 'rxjs/Subject';
+import {ScrollDispatcher} from '@angular/cdk/scrolling';
+import {FocusMonitor} from '@angular/cdk/a11y';
 
 
 describe('MatMenu', () => {
@@ -55,7 +61,9 @@ describe('MatMenu', () => {
         NestedMenu,
         NestedMenuCustomElevation,
         NestedMenuRepeater,
-        FakeIcon
+        FakeIcon,
+        SimpleLazyMenu,
+        LazyMenuWithContext,
       ],
       providers: [
         {provide: Directionality, useFactory: () => ({value: dir})}
@@ -70,9 +78,12 @@ describe('MatMenu', () => {
     })();
   }));
 
-  afterEach(() => {
+  afterEach(inject([OverlayContainer], (currentOverlayContainer: OverlayContainer) => {
+    // Since we're resetting the testing module in some of the tests,
+    // we can potentially have multiple overlay containers.
+    currentOverlayContainer.ngOnDestroy();
     overlayContainer.ngOnDestroy();
-  });
+  }));
 
   it('should open the menu as an idempotent operation', () => {
     const fixture = TestBed.createComponent(SimpleMenu);
@@ -136,6 +147,45 @@ describe('MatMenu', () => {
 
     expect(document.activeElement).toBe(triggerEl);
   }));
+
+  it('should set the proper focus origin when restoring focus after opening by keyboard',
+    fakeAsync(inject([FocusMonitor], (focusMonitor: FocusMonitor) => {
+      const fixture = TestBed.createComponent(SimpleMenu);
+      fixture.detectChanges();
+      const triggerEl = fixture.componentInstance.triggerEl.nativeElement;
+
+      patchElementFocus(triggerEl);
+      focusMonitor.monitor(triggerEl, false);
+      triggerEl.click(); // A click without a mousedown before it is considered a keyboard open.
+      fixture.detectChanges();
+      fixture.componentInstance.trigger.closeMenu();
+      fixture.detectChanges();
+      tick(500);
+      fixture.detectChanges();
+
+      expect(triggerEl.classList).toContain('cdk-program-focused');
+      focusMonitor.stopMonitoring(triggerEl);
+    })));
+
+  it('should set the proper focus origin when restoring focus after opening by mouse',
+    fakeAsync(inject([FocusMonitor], (focusMonitor: FocusMonitor) => {
+      const fixture = TestBed.createComponent(SimpleMenu);
+      fixture.detectChanges();
+      const triggerEl = fixture.componentInstance.triggerEl.nativeElement;
+
+      dispatchFakeEvent(triggerEl, 'mousedown');
+      triggerEl.click();
+      fixture.detectChanges();
+      patchElementFocus(triggerEl);
+      focusMonitor.monitor(triggerEl, false);
+      fixture.componentInstance.trigger.closeMenu();
+      fixture.detectChanges();
+      tick(500);
+      fixture.detectChanges();
+
+      expect(triggerEl.classList).toContain('cdk-mouse-focused');
+      focusMonitor.stopMonitoring(triggerEl);
+    })));
 
   it('should close the menu when pressing ESCAPE', fakeAsync(() => {
     const fixture = TestBed.createComponent(SimpleMenu);
@@ -225,21 +275,124 @@ describe('MatMenu', () => {
     expect(fixture.componentInstance.items.last.getLabel()).toBe('Item with an icon');
   });
 
-  it('should focus the menu panel root node when it was opened by mouse', () => {
+  it('should set the proper focus origin when opening by mouse', fakeAsync(() => {
     const fixture = TestBed.createComponent(SimpleMenu);
-
     fixture.detectChanges();
+    spyOn(fixture.componentInstance.items.first, 'focus').and.callThrough();
 
     const triggerEl = fixture.componentInstance.triggerEl.nativeElement;
 
     dispatchFakeEvent(triggerEl, 'mousedown');
     triggerEl.click();
     fixture.detectChanges();
+    tick(500);
 
-    const panel = overlayContainerElement.querySelector('.mat-menu-panel')!;
+    expect(fixture.componentInstance.items.first.focus).toHaveBeenCalledWith('mouse');
+  }));
 
-    expect(panel).toBeTruthy('Expected the panel to be rendered.');
-    expect(document.activeElement).toBe(panel, 'Expected the panel to be focused.');
+  it('should close the menu when using the CloseScrollStrategy', fakeAsync(() => {
+    const scrolledSubject = new Subject();
+
+    TestBed
+      .resetTestingModule()
+      .configureTestingModule({
+        imports: [MatMenuModule, NoopAnimationsModule],
+        declarations: [SimpleMenu, FakeIcon],
+        providers: [
+          {provide: ScrollDispatcher, useFactory: () => ({scrolled: () => scrolledSubject})},
+          {
+            provide: MAT_MENU_SCROLL_STRATEGY,
+            deps: [Overlay],
+            useFactory: (overlay: Overlay) => () => overlay.scrollStrategies.close()
+          }
+        ]
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(SimpleMenu);
+    const trigger = fixture.componentInstance.trigger;
+
+    fixture.detectChanges();
+    trigger.openMenu();
+    fixture.detectChanges();
+
+    expect(trigger.menuOpen).toBe(true);
+
+    scrolledSubject.next();
+    tick(500);
+
+    expect(trigger.menuOpen).toBe(false);
+  }));
+
+  describe('lazy rendering', () => {
+    it('should be able to render the menu content lazily', fakeAsync(() => {
+      const fixture = TestBed.createComponent(SimpleLazyMenu);
+      fixture.detectChanges();
+
+      fixture.componentInstance.triggerEl.nativeElement.click();
+      fixture.detectChanges();
+      tick(500);
+
+      const panel = overlayContainerElement.querySelector('.mat-menu-panel')!;
+
+      expect(panel).toBeTruthy('Expected panel to be defined');
+      expect(panel.textContent).toContain('Another item', 'Expected panel to have correct content');
+      expect(fixture.componentInstance.trigger.menuOpen).toBe(true, 'Expected menu to be open');
+    }));
+
+    it('should focus the first menu item when opening a lazy menu via keyboard', fakeAsync(() => {
+      let zone: MockNgZone;
+
+      // Clear out the container since resetting the module won't do it.
+      overlayContainer.ngOnDestroy();
+
+      TestBed
+        .resetTestingModule()
+        .configureTestingModule({
+          imports: [MatMenuModule, NoopAnimationsModule],
+          declarations: [SimpleLazyMenu],
+          providers: [{provide: NgZone, useFactory: () => zone = new MockNgZone()}]
+        })
+        .compileComponents();
+
+      const fixture = TestBed.createComponent(SimpleLazyMenu);
+      fixture.detectChanges();
+
+      // A click without a mousedown before it is considered a keyboard open.
+      fixture.componentInstance.triggerEl.nativeElement.click();
+      fixture.detectChanges();
+      tick(500);
+      zone!.simulateZoneExit();
+      tick();
+
+      const item = document.querySelector('.mat-menu-panel [mat-menu-item]')!;
+
+      expect(document.activeElement).toBe(item, 'Expected first item to be focused');
+    }));
+
+    it('should be able to open the same menu with a different context', fakeAsync(() => {
+      const fixture = TestBed.createComponent(LazyMenuWithContext);
+      fixture.detectChanges();
+
+      fixture.componentInstance.triggerOne.openMenu();
+      fixture.detectChanges();
+      tick(500);
+
+      let item = overlayContainerElement.querySelector('.mat-menu-panel [mat-menu-item]')!;
+
+      expect(item.textContent!.trim()).toBe('one');
+
+      fixture.componentInstance.triggerOne.closeMenu();
+      fixture.detectChanges();
+      tick(500);
+
+      fixture.componentInstance.triggerTwo.openMenu();
+      fixture.detectChanges();
+      tick(500);
+      item = overlayContainerElement.querySelector('.mat-menu-panel [mat-menu-item]')!;
+
+      expect(item.textContent!.trim()).toBe('two');
+    }));
   });
 
   describe('positions', () => {
@@ -1029,6 +1182,7 @@ describe('MatMenu', () => {
 
         instance.alternateTrigger.openMenu();
         fixture.detectChanges();
+        tick(500);
 
         lastMenu = overlay.querySelector('.mat-menu-panel') as HTMLElement;
 
@@ -1082,6 +1236,7 @@ describe('MatMenu', () => {
       compileTestComponent();
       instance.rootTriggerEl.nativeElement.click();
       fixture.detectChanges();
+      tick(500);
       expect(overlay.querySelectorAll('.mat-menu-panel').length).toBe(1, 'Expected one open menu');
 
       instance.showLazy = true;
@@ -1091,6 +1246,8 @@ describe('MatMenu', () => {
 
       dispatchMouseEvent(lazyTrigger, 'mouseenter');
       fixture.detectChanges();
+      tick(500);
+
       expect(lazyTrigger.classList)
           .toContain('mat-menu-item-highlighted', 'Expected the trigger to be highlighted');
       expect(overlay.querySelectorAll('.mat-menu-panel').length).toBe(2, 'Expected two open menus');
@@ -1118,10 +1275,12 @@ describe('MatMenu', () => {
 
       repeaterFixture.componentInstance.rootTriggerEl.nativeElement.click();
       repeaterFixture.detectChanges();
+      tick(500);
       expect(overlay.querySelectorAll('.mat-menu-panel').length).toBe(1, 'Expected one open menu');
 
       dispatchMouseEvent(overlay.querySelector('.level-one-trigger')!, 'mouseenter');
       repeaterFixture.detectChanges();
+      tick(500);
       expect(overlay.querySelectorAll('.mat-menu-panel').length).toBe(2, 'Expected two open menus');
     }));
 
@@ -1380,4 +1539,48 @@ class NestedMenuRepeater {
   selector: 'fake-icon',
   template: '<ng-content></ng-content>'
 })
-class FakeIcon { }
+class FakeIcon {}
+
+
+@Component({
+  template: `
+    <button [matMenuTriggerFor]="menu" #triggerEl>Toggle menu</button>
+
+    <mat-menu #menu="matMenu">
+      <ng-template matMenuContent>
+        <button mat-menu-item>Item</button>
+        <button mat-menu-item>Another item</button>
+      </ng-template>
+    </mat-menu>
+  `
+})
+class SimpleLazyMenu {
+  @ViewChild(MatMenuTrigger) trigger: MatMenuTrigger;
+  @ViewChild('triggerEl') triggerEl: ElementRef;
+}
+
+
+@Component({
+  template: `
+    <button
+      [matMenuTriggerFor]="menu"
+      [matMenuTriggerData]="{label: 'one'}"
+      #triggerOne="matMenuTrigger">One</button>
+
+    <button
+      [matMenuTriggerFor]="menu"
+      [matMenuTriggerData]="{label: 'two'}"
+      #triggerTwo="matMenuTrigger">Two</button>
+
+    <mat-menu matMenuContent #menu="matMenu">
+      <ng-template let-label="label" matMenuContent>
+        <button mat-menu-item>{{label}}</button>
+      </ng-template>
+    </mat-menu>
+  `
+})
+class LazyMenuWithContext {
+  @ViewChild('triggerOne') triggerOne: MatMenuTrigger;
+  @ViewChild('triggerTwo') triggerTwo: MatMenuTrigger;
+}
+

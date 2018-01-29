@@ -30,7 +30,7 @@ export class GlobalPositionStrategy implements PositionStrategy {
   private _width: string = '';
   private _height: string = '';
 
-  /* A lazily-created wrapper for the overlay element that is used as a flex container.  */
+  /** A lazily-created wrapper for the overlay element that is used as a flex container. */
   private _wrapper: HTMLElement | null = null;
 
   constructor(private _document: any) {}
@@ -146,6 +146,13 @@ export class GlobalPositionStrategy implements PositionStrategy {
    * @returns Resolved when the styles have been applied.
    */
   apply(): void {
+    // Since the overlay ref applies the strategy asynchronously, it could
+    // have been disposed before it ends up being applied. If that is the
+    // case, we shouldn't do anything.
+    if (!this._overlayRef.hasAttached()) {
+      return;
+    }
+
     const element = this._overlayRef.overlayElement;
 
     if (!this._wrapper && element.parentNode) {
