@@ -27,7 +27,16 @@ import {
   OnChanges,
   OnDestroy
 } from '@angular/core';
-import {LEFT_ARROW, RIGHT_ARROW, DOWN_ARROW, UP_ARROW, ENTER, SPACE} from '@angular/cdk/keycodes';
+import {
+  LEFT_ARROW,
+  RIGHT_ARROW,
+  DOWN_ARROW,
+  UP_ARROW,
+  ENTER,
+  SPACE,
+  HOME,
+  END,
+} from '@angular/cdk/keycodes';
 import {CdkStepLabel} from './step-label';
 import {coerceBooleanProperty} from '@angular/cdk/coercion';
 import {AbstractControl} from '@angular/forms';
@@ -126,7 +135,10 @@ export class CdkStep implements OnChanges {
   /** Resets the step to its initial state. Note that this includes resetting form data. */
   reset(): void {
     this.interacted = false;
-    this.completed = false;
+
+    if (this._customCompleted != null) {
+      this._customCompleted = false;
+    }
 
     if (this.stepControl) {
       this.stepControl.reset();
@@ -302,6 +314,16 @@ export class CdkStepper implements OnDestroy {
 
     if (keyCode === SPACE || keyCode === ENTER) {
       this.selectedIndex = this._focusIndex;
+      event.preventDefault();
+    }
+
+    if (keyCode === HOME) {
+      this._focusStep(0);
+      event.preventDefault();
+    }
+
+    if (keyCode === END) {
+      this._focusStep(this._steps.length - 1);
       event.preventDefault();
     }
   }
